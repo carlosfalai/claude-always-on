@@ -23,6 +23,9 @@ const PORT = process.env.WEBHOOK_PORT || 3000;
 app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
+// Serve static audio files
+app.use('/public', express.static('public'));
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
@@ -59,16 +62,32 @@ app.post('/voice/incoming', async (req, res) => {
       speechTimeout: 'auto'
     });
 
-    gather.say({
-      voice: 'Polly.Mia',
-      language: 'es-ES'
-    }, '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea? Puedes decir cosas como pizza, alitas, tacos, o lo que prefieras.');
+    // Generate audio with ElevenLabs
+    const audioUrl = await generateElevenLabsAudio(
+      '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea? Puedes decir cosas como pizza, alitas, tacos, o lo que prefieras.',
+      'es'
+    );
+
+    if (audioUrl) {
+      gather.play(audioUrl);
+    } else {
+      // Fallback to Polly
+      gather.say({
+        voice: 'Polly.Mia',
+        language: 'es-ES'
+      }, '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea?');
+    }
 
     // If no input, say goodbye
-    twiml.say({
-      voice: 'Polly.Mia',
-      language: 'es-ES'
-    }, 'No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!');
+    const goodbyeUrl = await generateElevenLabsAudio('No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!', 'es');
+    if (goodbyeUrl) {
+      twiml.play(goodbyeUrl);
+    } else {
+      twiml.say({
+        voice: 'Polly.Mia',
+        language: 'es-ES'
+      }, 'No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!');
+    }
 
     console.log(`✅ Call answered, waiting for speech input`);
 
@@ -272,16 +291,26 @@ Responde en español de manera breve y natural (máximo 2 frases). Haz una pregu
       speechTimeout: 'auto'
     });
 
-    gather.say({
-      voice: 'Polly.Mia',
-      language: 'es-ES'
-    }, aiResponse);
+    const responseUrl = await generateElevenLabsAudio(aiResponse, 'es');
+    if (responseUrl) {
+      gather.play(responseUrl);
+    } else {
+      gather.say({
+        voice: 'Polly.Mia',
+        language: 'es-ES'
+      }, aiResponse);
+    }
 
     // If no more input
-    twiml.say({
-      voice: 'Polly.Mia',
-      language: 'es-ES'
-    }, '¡Perfecto! Disfruta el Super Bowl. ¡Hasta luego!');
+    const finalUrl = await generateElevenLabsAudio('¡Perfecto! Disfruta el Super Bowl. ¡Hasta luego!', 'es');
+    if (finalUrl) {
+      twiml.play(finalUrl);
+    } else {
+      twiml.say({
+        voice: 'Polly.Mia',
+        language: 'es-ES'
+      }, '¡Perfecto! Disfruta el Super Bowl. ¡Hasta luego!');
+    }
 
     console.log(`💬 AI responded: ${aiResponse}`);
 
@@ -413,6 +442,62 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+
+/**
+ * Generate audio with ElevenLabs TTS
+ */
+async function generateElevenLabsAudio(text, language = 'es') {
+  try {
+    const voiceId = process.env.ELEVENLABS_VOICE_ID;
+    const apiKey = process.env.ELEVENLABS_API_KEY;
+
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        text: text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75
+        }
+      })
+    });
+
+    if (!response.ok) {
+      console.error('ElevenLabs API error:', response.status);
+      return null;
+    }
+
+    // Get audio data
+    const audioBuffer = await response.arrayBuffer();
+    const fs = require('fs');
+    const path = require('path');
+
+    // Save to temporary public directory
+    const filename = `voice_${Date.now()}.mp3`;
+    const filepath = path.join(__dirname, 'public', filename);
+
+    // Create public directory if it doesn't exist
+    const publicDir = path.join(__dirname, 'public');
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+
+    fs.writeFileSync(filepath, Buffer.from(audioBuffer));
+
+    // Return public URL
+    const baseUrl = process.env.WEBHOOK_BASE_URL || 'http://localhost:3000';
+    return `${baseUrl}/public/${filename}`;
+
+  } catch (error) {
+    console.error('Error generating ElevenLabs audio:', error);
+    return null;
+  }
+}
 
 /**
  * Build call context from memory
