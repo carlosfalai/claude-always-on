@@ -8,14 +8,28 @@ const memorySystem = require('./memory-system');
  * Uses IMAP with app password (no OAuth needed)
  */
 
-const GMAIL_CONFIG = {
-  user: process.env.CARLOS_EMAIL || 'cff@centremedicalfont.ca',
-  password: (process.env.CARLOS_EMAIL_APP_PASSWORD || '').replace(/ /g, ''),
-  host: 'imap.gmail.com',
-  port: 993,
-  tls: true,
-  tlsOptions: { rejectUnauthorized: false }
-};
+const GMAIL_ACCOUNTS = [
+  {
+    name: 'Carlos',
+    user: process.env.CARLOS_EMAIL || 'cff@centremedicalfont.ca',
+    password: (process.env.CARLOS_EMAIL_APP_PASSWORD || '').replace(/ /g, ''),
+    host: 'imap.gmail.com',
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false }
+  },
+  {
+    name: 'Info',
+    user: process.env.INFO_EMAIL || 'info@centremedicalfont.ca',
+    password: (process.env.INFO_EMAIL_APP_PASSWORD || '').replace(/ /g, ''),
+    host: 'imap.gmail.com',
+    port: 993,
+    tls: true,
+    tlsOptions: { rejectUnauthorized: false },
+    connTimeout: 20000, // Increase timeout
+    authTimeout: 20000
+  }
+];
 
 class GmailMonitor {
   constructor() {
@@ -27,9 +41,9 @@ class GmailMonitor {
     ];
   }
 
-  async checkNewEmails() {
+  async checkNewEmails(config) {
     return new Promise((resolve, reject) => {
-      const imap = new Imap(GMAIL_CONFIG);
+      const imap = new Imap(config);
       const emails = [];
 
       imap.once('ready', () => {
@@ -114,15 +128,32 @@ class GmailMonitor {
 
   async getUrgentSummary() {
     try {
-      const emails = await this.checkNewEmails();
-      const urgent = emails.filter(e => e.isUrgent);
+      const allUrgent = [];
 
-      if (urgent.length === 0) {
+      // Check all accounts
+      for (const account of GMAIL_ACCOUNTS) {
+        console.log(`\n📧 Checking ${account.name} (${account.user})...`);
+        try {
+          const emails = await this.checkNewEmails(account);
+          const urgent = emails.filter(e => e.isUrgent);
+
+          // Tag with account name
+          urgent.forEach(e => e.account = account.name);
+          allUrgent.push(...urgent);
+        } catch (error) {
+          console.error(`   Error checking ${account.name}:`, error.message);
+        }
+      }
+
+      if (allUrgent.length === 0) {
         return null;
       }
 
-      const summary = urgent.map(e => `• ${e.from}: ${e.subject}`).join('\n');
-      return `📧 Tienes ${urgent.length} emails urgentes:\n${summary}`;
+      const summary = allUrgent
+        .map(e => `• [${e.account}] ${e.from}: ${e.subject}`)
+        .join('\n');
+
+      return `📧 Tienes ${allUrgent.length} emails urgentes:\n${summary}`;
 
     } catch (error) {
       console.error('Error checking Gmail:', error.message);
