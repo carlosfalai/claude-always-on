@@ -9,8 +9,8 @@ const memorySystem = require('./memory-system');
  */
 
 const GMAIL_CONFIG = {
-  user: 'instanthpi@gmail.com',
-  password: process.env.INSTANTHPI_NOREPLY_APP_PASSWORD.replace(/ /g, ''), // Remove spaces
+  user: process.env.CARLOS_EMAIL || 'cff@centremedicalfont.ca',
+  password: (process.env.CARLOS_EMAIL_APP_PASSWORD || '').replace(/ /g, ''),
   host: 'imap.gmail.com',
   port: 993,
   tls: true,
