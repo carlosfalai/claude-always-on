@@ -97,8 +97,9 @@ class CheckInSystem {
    * Collect context for check-in
    */
   async collectContext() {
-    // TODO: Integrate with Gmail, Calendar, Notion APIs
-    // For now, return basic context
+    const gmailMonitor = require('./gmail-monitor');
+    const calendarMonitor = require('./calendar-monitor');
+    const notionMonitor = require('./notion-monitor');
 
     const context = {
       timestamp: new Date().toISOString(),
@@ -106,6 +107,36 @@ class CheckInSystem {
       memories: await memorySystem.getRelevantMemories(this.userId, '', 5),
       lastCheckIn: await memorySystem.getLastCheckIn(this.userId),
     };
+
+    // Add Gmail context
+    try {
+      const gmailSummary = await gmailMonitor.getUrgentSummary();
+      if (gmailSummary) {
+        context.urgentEmails = gmailSummary;
+      }
+    } catch (error) {
+      console.error('Error checking Gmail:', error.message);
+    }
+
+    // Add Calendar context
+    try {
+      const calendarSummary = await calendarMonitor.getEventsSummary();
+      if (calendarSummary) {
+        context.upcomingEvents = calendarSummary;
+      }
+    } catch (error) {
+      console.error('Error checking Calendar:', error.message);
+    }
+
+    // Add Notion context
+    try {
+      const notionSummary = await notionMonitor.getTasksSummary();
+      if (notionSummary) {
+        context.tasks = notionSummary;
+      }
+    } catch (error) {
+      console.error('Error checking Notion:', error.message);
+    }
 
     return context;
   }
@@ -121,6 +152,9 @@ class CheckInSystem {
 - User's Goals: ${JSON.stringify(context.goals, null, 2)}
 - Recent Memories: ${JSON.stringify(context.memories, null, 2)}
 - Last Check-in: ${context.lastCheckIn ? context.lastCheckIn.created_at : 'Never'}
+${context.urgentEmails ? `\n**URGENT EMAILS:**\n${context.urgentEmails}` : ''}
+${context.upcomingEvents ? `\n**UPCOMING EVENTS:**\n${context.upcomingEvents}` : ''}
+${context.tasks ? `\n**TASKS:**\n${context.tasks}` : ''}
 
 **Your Task:**
 Decide if you should contact the user. Output EXACTLY one of:
@@ -263,41 +297,55 @@ Make your decision:`;
   }
 
   /**
-   * Make the actual voice call
+   * Make the actual voice call using ElevenLabs
    */
   async makeCall(reason) {
-    const twilio = require('twilio');
-    const twilioClient = twilio(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    );
+    const fetch = require('node-fetch');
 
-    console.log('📞 Initiating voice call...');
+    console.log('📞 Initiating ElevenLabs voice call...');
 
     try {
-      const call = await twilioClient.calls.create({
-        from: process.env.TWILIO_PHONE_CA,
-        to: process.env.USER_PHONE_NUMBER,
-        url: `${process.env.WEBHOOK_BASE_URL}/voice/checkin?reason=${encodeURIComponent(reason)}`,
+      const response = await fetch('https://api.elevenlabs.io/v1/convai/twilio/outbound-call', {
         method: 'POST',
-        statusCallback: `${process.env.WEBHOOK_BASE_URL}/voice/status`,
-        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-        timeout: 30
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          agent_id: 'agent_5201kgqb02jbf2w99y6xzhga3rmz',
+          agent_phone_number_id: 'phnum_4401kgqb1zgzfbj921brbgr4cxdk',
+          to_number: process.env.USER_PHONE_NUMBER,
+          conversation_initiation_client_data: {
+            conversation_config_override: {
+              agent: {
+                first_message: `¡Hola Carlos! Te llamo porque: ${reason}`,
+                prompt: {
+                  prompt: `You are Carlos' personal AI assistant speaking in Spanish. You just told him: "${reason}". Discuss this with him naturally. Keep responses SHORT (1-2 sentences). Wait for his reply. DO NOT end call unless he says goodbye.`
+                }
+              }
+            }
+          }
+        })
       });
 
-      console.log(`✅ Call initiated: ${call.sid}`);
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+      }
+
+      const result = await response.json();
+      console.log(`✅ Call initiated: ${result.callSid}`);
 
       await this.bot.api.sendMessage(
         this.userId,
-        `📞 Calling you now... (${call.sid})`
+        `📞 Llamándote ahora con tu propia voz... (${result.callSid})`
       );
 
-      return call.sid;
+      return result.callSid;
     } catch (error) {
       console.error('❌ Call error:', error.message);
       await this.bot.api.sendMessage(
         this.userId,
-        `❌ Failed to call: ${error.message}`
+        `❌ Error al llamar: ${error.message}`
       );
       return null;
     }
