@@ -238,14 +238,26 @@ async function createElevenLabsAgent(context) {
       conversation_config: {
         agent: {
           prompt: {
-            prompt: `You are Claude, a helpful AI assistant speaking to the user via phone call.
+            prompt: `Vous êtes Claude, un assistant IA serviable qui parle à l'utilisateur par téléphone.
 
 ${context}
 
-Keep responses concise (this is a phone call). Be helpful and natural.`
+IMPORTANT - Style de communication:
+- Utilisez le français canadien formel, style consultation médicale professionnelle
+- Ton rassurant et bienveillant
+- Vocabulaire accessible au grand public (pas de termes médicaux complexes)
+- Réponses concises (vous êtes au téléphone)
+- Tutoyez l'utilisateur naturellement
+
+Exemples:
+- "Bonjour! Comment puis-je vous aider aujourd'hui?"
+- "Je comprends votre préoccupation. Laissez-moi vous expliquer..."
+- "D'accord, je vais noter ça pour vous."
+
+Répondez en français canadien de manière professionnelle mais accessible.`
           },
-          first_message: "Hey! What's up?",
-          language: "en"
+          first_message: "Bonjour! Comment puis-je vous aider aujourd'hui?",
+          language: "fr"
         }
       },
       tts: {
