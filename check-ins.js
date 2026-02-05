@@ -297,14 +297,34 @@ Make your decision:`;
   }
 
   /**
-   * Make the actual voice call using ElevenLabs
+   * Make the actual voice call using ElevenLabs with full context
    */
-  async makeCall(reason) {
+  async makeCall(reason, context = null) {
     const fetch = require('node-fetch');
+    const gmailMonitor = require('./gmail-monitor');
 
-    console.log('📞 Initiating ElevenLabs voice call...');
+    console.log('📞 Initiating ElevenLabs voice call with context...');
 
     try {
+      // Get latest urgent emails if not provided
+      let emailContext = '';
+      if (context && context.urgentEmails) {
+        emailContext = `\n\nUrgent emails:\n${context.urgentEmails}`;
+      } else {
+        const urgentSummary = await gmailMonitor.getUrgentSummary();
+        if (urgentSummary) {
+          emailContext = `\n\n${urgentSummary}`;
+        }
+      }
+
+      // Get recent emails even if not urgent
+      const recentEmails = await gmailMonitor.checkAllNewEmails();
+      const recentContext = recentEmails.length > 0
+        ? `\n\nRecent emails (last ${recentEmails.length}): ${recentEmails.slice(0, 5).map(e => `${e.from}: ${e.subject}`).join('; ')}`
+        : '';
+
+      const fullContext = `${reason}${emailContext}${recentContext}`;
+
       const response = await fetch('https://api.elevenlabs.io/v1/convai/twilio/outbound-call', {
         method: 'POST',
         headers: {
@@ -318,9 +338,23 @@ Make your decision:`;
           conversation_initiation_client_data: {
             conversation_config_override: {
               agent: {
-                first_message: `¡Hola Carlos! Te llamo porque: ${reason}`,
+                first_message: `Hello Carlos! I'm calling because: ${reason}`,
                 prompt: {
-                  prompt: `You are Carlos' personal AI assistant speaking in Spanish. You just told him: "${reason}". Discuss this with him naturally. Keep responses SHORT (1-2 sentences). Wait for his reply. DO NOT end call unless he says goodbye.`
+                  prompt: `You are Carlos' personal AI assistant. You have access to his emails and can see:
+
+${fullContext}
+
+You just told him: "${reason}".
+
+During this call:
+- You can reference specific emails by sender and subject
+- If he asks "what emails do I have", tell him about the recent/urgent ones
+- Keep responses SHORT (1-2 sentences)
+- Wait for his reply after each response
+- Be conversational and helpful
+- DO NOT end call unless he says goodbye
+
+Speak naturally in English.`
                 }
               }
             }

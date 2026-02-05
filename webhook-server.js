@@ -46,54 +46,25 @@ app.post('/voice/incoming', async (req, res) => {
   console.log(`📞 Incoming call from: ${from}`);
   console.log(`   Call SID: ${callSid}`);
 
-  // TODO: Add caller ID verification for security
-  // For now, accept all calls
-
   const twiml = new VoiceResponse();
 
   try {
-    // Use Twilio Gather with speech for now (simpler, always works)
-    const gather = twiml.gather({
-      input: 'speech',
-      action: '/voice/response',
-      method: 'POST',
-      timeout: 5,
-      language: 'es-ES',
-      speechTimeout: 'auto'
+    // Connect directly to ElevenLabs Conversational AI agent
+    const connect = twiml.connect();
+
+    // Use the ElevenLabs Stream noun to connect to the agent
+    connect.stream({
+      url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_5201kgqb02jbf2w99y6xzhga3rmz`,
+      parameters: {
+        'xi-api-key': process.env.ELEVENLABS_API_KEY
+      }
     });
 
-    // Generate audio with ElevenLabs
-    const audioUrl = await generateElevenLabsAudio(
-      '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea? Puedes decir cosas como pizza, alitas, tacos, o lo que prefieras.',
-      'es'
-    );
-
-    if (audioUrl) {
-      gather.play(audioUrl);
-    } else {
-      // Fallback to Polly
-      gather.say({
-        voice: 'Polly.Mia',
-        language: 'es-ES'
-      }, '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea?');
-    }
-
-    // If no input, say goodbye
-    const goodbyeUrl = await generateElevenLabsAudio('No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!', 'es');
-    if (goodbyeUrl) {
-      twiml.play(goodbyeUrl);
-    } else {
-      twiml.say({
-        voice: 'Polly.Mia',
-        language: 'es-ES'
-      }, 'No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!');
-    }
-
-    console.log(`✅ Call answered, waiting for speech input`);
+    console.log(`✅ Call connected to ElevenLabs agent`);
 
   } catch (error) {
     console.error('Error handling call:', error);
-    twiml.say('Lo siento, tuve un error. Por favor intenta de nuevo.');
+    twiml.say('Sorry, I had an error. Please try again.');
   }
 
   res.type('text/xml');
