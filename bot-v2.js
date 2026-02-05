@@ -17,6 +17,7 @@ const AUTHORIZED_USER_ID = parseInt(process.env.TELEGRAM_USER_ID);
 
 // Initialize check-in system
 const checkIns = new CheckInSystem(bot);
+checkIns.setupCallbackHandlers();
 
 // Middleware: Security check - only respond to authorized user
 bot.use(async (ctx, next) => {
@@ -264,9 +265,55 @@ If NONE, just output "TYPE: NONE"`
   }
 }
 
-// Handle voice messages (placeholder for now)
+// Handle voice messages
 bot.on('message:voice', async (ctx) => {
-  await ctx.reply('🎤 Voice message support coming soon!');
+  const userId = ctx.from.id;
+
+  try {
+    await ctx.replyWithChatAction('typing');
+
+    // Get voice file
+    const voice = ctx.message.voice;
+    const fileId = voice.file_id;
+
+    console.log(`🎤 Received voice message from user ${userId}`);
+
+    // Download voice file from Telegram
+    const file = await ctx.api.getFile(fileId);
+    const fileUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+    console.log(`📥 Downloading voice file: ${fileUrl}`);
+
+    // Download the file
+    const axios = require('axios');
+    const fs = require('fs');
+    const path = require('path');
+
+    const response = await axios({
+      url: fileUrl,
+      method: 'GET',
+      responseType: 'arraybuffer'
+    });
+
+    // Save temporarily
+    const tempPath = path.join(__dirname, `voice_${Date.now()}.ogg`);
+    fs.writeFileSync(tempPath, response.data);
+
+    console.log(`💾 Saved to: ${tempPath}`);
+
+    // TODO: Transcribe with Whisper API or similar
+    // For now, acknowledge receipt
+    await ctx.reply('🎤 Voice message received! Transcription coming soon...\n\n_Tip: You can also type your message._', {
+      parse_mode: 'Markdown'
+    });
+
+    // Clean up
+    fs.unlinkSync(tempPath);
+
+  } catch (error) {
+    console.error('Error handling voice message:', error);
+    await ctx.reply('❌ Sorry, I had trouble processing your voice message. Can you type it instead?');
+  }
 });
 
 // Error handler

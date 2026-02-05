@@ -199,18 +199,13 @@ Make your decision:`;
         break;
 
       case 'CALL':
-        console.log(`📞 Would call user (not implemented yet)`);
-        // TODO: Implement voice calling via Twilio + 11labs
-        // For now, send a text instead
-        await this.bot.api.sendMessage(
-          this.userId,
-          `🚨 [Urgent] ${decision.message}`
-        );
+        console.log(`📞 Urgent situation detected - requesting permission to call`);
+        await this.requestCallPermission(decision.message);
         await memorySystem.logCheckIn(
           this.userId,
           'proactive',
           decision.message,
-          'CALL_FALLBACK_TEXT'
+          'CALL_REQUESTED'
         );
         break;
     }
@@ -245,6 +240,92 @@ Make your decision:`;
     } catch (error) {
       console.error('❌ Check-in error:', error);
     }
+  }
+
+  /**
+   * Request permission to call user
+   */
+  async requestCallPermission(message) {
+    const { InlineKeyboard } = require('grammy');
+
+    const keyboard = new InlineKeyboard()
+      .text('✅ Call me now', 'call_yes')
+      .text('❌ Just text', 'call_no');
+
+    await this.bot.api.sendMessage(
+      this.userId,
+      `🚨 *Urgent Update*\n\n${message}\n\n_Should I call you to discuss this?_`,
+      {
+        parse_mode: 'Markdown',
+        reply_markup: keyboard
+      }
+    );
+  }
+
+  /**
+   * Make the actual voice call
+   */
+  async makeCall(reason) {
+    const twilio = require('twilio');
+    const twilioClient = twilio(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    console.log('📞 Initiating voice call...');
+
+    try {
+      const call = await twilioClient.calls.create({
+        from: process.env.TWILIO_PHONE_CA,
+        to: process.env.USER_PHONE_NUMBER,
+        url: `${process.env.WEBHOOK_BASE_URL}/voice/checkin?reason=${encodeURIComponent(reason)}`,
+        method: 'POST',
+        statusCallback: `${process.env.WEBHOOK_BASE_URL}/voice/status`,
+        statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+        timeout: 30
+      });
+
+      console.log(`✅ Call initiated: ${call.sid}`);
+
+      await this.bot.api.sendMessage(
+        this.userId,
+        `📞 Calling you now... (${call.sid})`
+      );
+
+      return call.sid;
+    } catch (error) {
+      console.error('❌ Call error:', error.message);
+      await this.bot.api.sendMessage(
+        this.userId,
+        `❌ Failed to call: ${error.message}`
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Handle call permission response
+   */
+  setupCallbackHandlers() {
+    this.bot.callbackQuery('call_yes', async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(
+        `${ctx.callbackQuery.message.text}\n\n✅ _Calling you now..._`,
+        { parse_mode: 'Markdown' }
+      );
+
+      // Extract the reason from the message
+      const reason = ctx.callbackQuery.message.text.split('\n\n')[1];
+      await this.makeCall(reason);
+    });
+
+    this.bot.callbackQuery('call_no', async (ctx) => {
+      await ctx.answerCallbackQuery();
+      await ctx.editMessageText(
+        `${ctx.callbackQuery.message.text}\n\n📱 _Okay, I'll just text you instead._`,
+        { parse_mode: 'Markdown' }
+      );
+    });
   }
 
   /**

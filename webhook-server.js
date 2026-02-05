@@ -82,6 +82,149 @@ app.post('/voice/incoming', async (req, res) => {
 });
 
 /**
+ * WEBHOOK: Proactive Check-in Voice Call
+ * Called when the check-in system needs to call the user about something urgent
+ */
+app.post('/voice/checkin', async (req, res) => {
+  const from = req.body.From;
+  const callSid = req.body.CallSid;
+  const reason = req.query.reason || 'important update';
+
+  console.log(`📞 Check-in call from: ${from}`);
+  console.log(`   Reason: ${reason}`);
+  console.log(`   Call SID: ${callSid}`);
+
+  const twiml = new VoiceResponse();
+
+  try {
+    // Get context
+    const context = await buildCallContext();
+
+    // Use Claude to generate opening message based on reason
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 150,
+      messages: [{
+        role: 'user',
+        content: `You're calling the user about this urgent matter: "${reason}".
+
+Generate a brief, natural opening message in English (2 sentences max) explaining why you're calling.
+
+Context about user:
+${context}
+
+Be direct but friendly. This is an urgent proactive check-in.`
+      }]
+    });
+
+    const openingMessage = response.content[0].text;
+
+    // Start conversation with Gather
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice/checkin-response',
+      method: 'POST',
+      timeout: 5,
+      language: 'en-US',
+      speechTimeout: 'auto'
+    });
+
+    gather.say({
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    }, openingMessage);
+
+    // If no input
+    twiml.say({
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    }, 'I didn\'t hear you. I\'ll send you a text instead. Talk soon!');
+
+    console.log(`✅ Check-in call started`);
+
+  } catch (error) {
+    console.error('Error handling check-in call:', error);
+    twiml.say('Sorry, I had an error. I\'ll send you a text message instead.');
+  }
+
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+/**
+ * WEBHOOK: Check-in Voice Response Handler
+ * Processes speech input during check-in calls
+ */
+app.post('/voice/checkin-response', async (req, res) => {
+  const speechResult = req.body.SpeechResult;
+  const callSid = req.body.CallSid;
+
+  console.log(`🎤 User said (check-in): ${speechResult}`);
+
+  const twiml = new VoiceResponse();
+
+  try {
+    // Get context
+    const context = await buildCallContext();
+
+    // Call Claude to generate response
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Context: You called the user about an urgent matter and they just responded.
+
+User said: "${speechResult}"
+
+${context ? `Information about the user:\n${context}` : ''}
+
+Respond naturally in English (2-3 sentences max). Continue the conversation or wrap up if they've addressed the urgent matter.`
+      }]
+    });
+
+    const aiResponse = response.content[0].text;
+
+    // Store conversation
+    await memorySystem.storeConversation(userId, 'user', speechResult, 'phone');
+    await memorySystem.storeConversation(userId, 'assistant', aiResponse, 'phone');
+
+    // Continue or end conversation
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice/checkin-response',
+      method: 'POST',
+      timeout: 5,
+      language: 'en-US',
+      speechTimeout: 'auto'
+    });
+
+    gather.say({
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    }, aiResponse);
+
+    // If no more input
+    twiml.say({
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    }, 'Alright, talk to you later!');
+
+    console.log(`💬 AI responded: ${aiResponse}`);
+
+  } catch (error) {
+    console.error('Error processing check-in speech:', error);
+    twiml.say({
+      voice: 'Polly.Joanna',
+      language: 'en-US'
+    }, 'Sorry, I had a problem. I\'ll send you a text!');
+  }
+
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+/**
  * WEBHOOK: Voice Response Handler
  * Processes speech input and continues conversation
  */
