@@ -1,0 +1,24 @@
+{
+  "conversation_config": {
+    "tts": {
+      "voice_id": "8iTUHWF6x9Ury8ytOqQH",
+      "model_id": "eleven_multilingual_v2",
+      "stability": 0.5,
+      "similarity_boost": 0.75,
+      "optimize_streaming_latency": 4
+    },
+    "asr": {
+      "provider": "elevenlabs",
+      "quality": "high"
+    },
+    "agent": {
+      "prompt": {
+        "prompt": "You are Carlos' personal AI assistant. You speak Spanish naturally and help manage his schedule, goals, and check in regularly. You are friendly, concise, and proactive. When calling about specific topics, stick to the topic but be conversational."
+      },
+      "first_message": "Hola! Soy tu asistente de IA.",
+      "language": "es"
+    }
+  },
+  "name": "Carlos Personal Assistant",
+  "platform_settings": {}
+}
