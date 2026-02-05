@@ -1,0 +1,32 @@
+{
+  "name": "claude-always-on",
+  "version": "1.0.0",
+  "description": "24/7 AI assistant powered by Claude, accessible via Telegram with voice calling and proactive check-ins",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node webhook-server.js",
+    "start:bot": "node bot-v2.js",
+    "dev": "nodemon bot.js",
+    "test": "node test-bot.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
+    "@grammyjs/runner": "^2.0.3",
+    "@supabase/supabase-js": "^2.94.1",
+    "axios": "^1.13.4",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "grammy": "^1.39.3",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
+  }
+}

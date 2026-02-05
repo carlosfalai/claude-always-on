@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: claude-always-on-webhooks
+    runtime: node
+    buildCommand: npm install
+    startCommand: node webhook-server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: WEBHOOK_PORT
+        value: 3000
+      # Add other env vars via Render dashboard
+    healthCheckPath: /health
