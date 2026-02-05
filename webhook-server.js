@@ -49,23 +49,105 @@ app.post('/voice/incoming', async (req, res) => {
   const twiml = new VoiceResponse();
 
   try {
-    // Build context for the call
-    const context = await buildCallContext();
-
-    // Create ElevenLabs conversational AI agent
-    const agentId = await createElevenLabsAgent(context);
-
-    // Connect to ElevenLabs
-    const connect = twiml.connect();
-    connect.stream({
-      url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${agentId}`
+    // Use Twilio Gather with speech for now (simpler, always works)
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice/response',
+      method: 'POST',
+      timeout: 5,
+      language: 'es-ES',
+      speechTimeout: 'auto'
     });
 
-    console.log(`✅ Connected to ElevenLabs agent: ${agentId}`);
+    gather.say({
+      voice: 'Polly.Mia',
+      language: 'es-ES'
+    }, '¡Hola! Te llamo para saber qué quieres comer para el Super Bowl este fin de semana. ¿Tienes alguna idea? Puedes decir cosas como pizza, alitas, tacos, o lo que prefieras.');
+
+    // If no input, say goodbye
+    twiml.say({
+      voice: 'Polly.Mia',
+      language: 'es-ES'
+    }, 'No te escuché. Llámame cuando quieras hablar. ¡Hasta luego!');
+
+    console.log(`✅ Call answered, waiting for speech input`);
 
   } catch (error) {
-    console.error('Error connecting to ElevenLabs:', error);
-    twiml.say('Sorry, I encountered an error. Please try again later.');
+    console.error('Error handling call:', error);
+    twiml.say('Lo siento, tuve un error. Por favor intenta de nuevo.');
+  }
+
+  res.type('text/xml');
+  res.send(twiml.toString());
+});
+
+/**
+ * WEBHOOK: Voice Response Handler
+ * Processes speech input and continues conversation
+ */
+app.post('/voice/response', async (req, res) => {
+  const speechResult = req.body.SpeechResult;
+  const callSid = req.body.CallSid;
+
+  console.log(`🎤 User said: ${speechResult}`);
+
+  const twiml = new VoiceResponse();
+
+  try {
+    // Get context
+    const context = await buildCallContext();
+
+    // Call Claude to generate response
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-5-20250929',
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: `Contexto: Estás hablando por teléfono sobre planes de comida para el Super Bowl.
+
+Usuario dijo: "${speechResult}"
+
+${context ? `Información sobre el usuario:\n${context}` : ''}
+
+Responde en español de manera breve y natural (máximo 2 frases). Haz una pregunta de seguimiento o sugiere opciones. Si ya tienen una idea clara, confirma y pregunta si necesitan ayuda con algo más.`
+      }]
+    });
+
+    const aiResponse = response.content[0].text;
+
+    // Store conversation
+    await memorySystem.storeConversation(userId, 'user', speechResult, 'phone');
+    await memorySystem.storeConversation(userId, 'assistant', aiResponse, 'phone');
+
+    // Continue conversation
+    const gather = twiml.gather({
+      input: 'speech',
+      action: '/voice/response',
+      method: 'POST',
+      timeout: 5,
+      language: 'es-ES',
+      speechTimeout: 'auto'
+    });
+
+    gather.say({
+      voice: 'Polly.Mia',
+      language: 'es-ES'
+    }, aiResponse);
+
+    // If no more input
+    twiml.say({
+      voice: 'Polly.Mia',
+      language: 'es-ES'
+    }, '¡Perfecto! Disfruta el Super Bowl. ¡Hasta luego!');
+
+    console.log(`💬 AI responded: ${aiResponse}`);
+
+  } catch (error) {
+    console.error('Error processing speech:', error);
+    twiml.say({
+      voice: 'Polly.Mia',
+      language: 'es-ES'
+    }, 'Lo siento, tuve un problema. ¡Hasta luego!');
   }
 
   res.type('text/xml');
