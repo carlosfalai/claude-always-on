@@ -41,34 +41,42 @@ const smsConversations = new Map();
  */
 app.post('/voice/incoming', async (req, res) => {
   const from = req.body.From;
+  const to = req.body.To;
   const callSid = req.body.CallSid;
 
-  console.log(`📞 Incoming call from: ${from}`);
+  console.log(`📞 Incoming call from: ${from} to ${to}`);
   console.log(`   Call SID: ${callSid}`);
 
-  const twiml = new VoiceResponse();
-
   try {
-    // Connect directly to ElevenLabs Conversational AI agent
-    const connect = twiml.connect();
-
-    // Use the ElevenLabs Stream noun to connect to the agent
-    connect.stream({
-      url: `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_5201kgqb02jbf2w99y6xzhga3rmz`,
-      parameters: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY
+    // Register call with ElevenLabs to get TwiML
+    const response = await axios.post(
+      'https://api.elevenlabs.io/v1/convai/twilio/register-call',
+      {
+        agent_id: 'agent_5201kgqb02jbf2w99y6xzhga3rmz',
+        from_number: from,
+        to_number: to,
+        direction: 'inbound'
+      },
+      {
+        headers: {
+          'xi-api-key': process.env.ELEVENLABS_API_KEY,
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
 
-    console.log(`✅ Call connected to ElevenLabs agent`);
+    // Return the TwiML from ElevenLabs
+    console.log(`✅ Call registered with ElevenLabs`);
+    res.type('text/xml');
+    res.send(response.data);
 
   } catch (error) {
-    console.error('Error handling call:', error);
-    twiml.say('Sorry, I had an error. Please try again.');
+    console.error('Error registering call:', error.message);
+    const twiml = new VoiceResponse();
+    twiml.say('Sorry, I had an error connecting. Please try again.');
+    res.type('text/xml');
+    res.send(twiml.toString());
   }
-
-  res.type('text/xml');
-  res.send(twiml.toString());
 });
 
 /**
