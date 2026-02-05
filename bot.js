@@ -76,6 +76,18 @@ bot.command('stats', async (ctx) => {
   );
 });
 
+// Handle voice messages
+bot.on('message:voice', async (ctx) => {
+  const userId = ctx.from.id;
+  console.log(`[${new Date().toISOString()}] Received voice message from user ${userId}`);
+
+  try {
+    await ctx.reply('🎤 Voice messages coming soon! For now, please send text messages.');
+  } catch (error) {
+    console.error('Error handling voice:', error);
+  }
+});
+
 // Handle text messages
 bot.on('message:text', async (ctx) => {
   const userId = ctx.from.id;
