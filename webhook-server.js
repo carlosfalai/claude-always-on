@@ -1,5 +1,16 @@
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
 require('dotenv').config();
 const express = require('express');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const twilio = require('twilio');
 const VoiceResponse = twilio.twiml.VoiceResponse;
 const MessagingResponse = twilio.twiml.MessagingResponse;
@@ -18,6 +29,25 @@ const Anthropic = require('@anthropic-ai/sdk');
 
 const app = express();
 const PORT = process.env.WEBHOOK_PORT || 3000;
+
+// Security middleware (FIRST - before everything else)
+app.use(helmet({
+  contentSecurityPolicy: false, // Disable CSP for static audio files
+}));
+
+// Rate limiting for webhooks (Twilio endpoints)
+const webhookLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 60, // 60 requests per minute
+  message: 'Too many webhook requests, please try again later',
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Skip rate limiting for known Twilio IPs (optional - add if needed)
+  skip: (req) => {
+    // Twilio IPs can be whitelisted here if desired
+    return false;
+  }
+});
 
 // Parse URL-encoded bodies (Twilio sends data this way)
 app.use(express.urlencoded({ extended: false }));
@@ -39,7 +69,7 @@ const smsConversations = new Map();
  * WEBHOOK: Incoming Voice Call
  * Twilio calls this when someone dials your Twilio number
  */
-app.post('/voice/incoming', async (req, res) => {
+app.post('/voice/incoming', webhookLimiter, async (req, res) => {
   const from = req.body.From;
   const to = req.body.To;
   const callSid = req.body.CallSid;
@@ -83,7 +113,7 @@ app.post('/voice/incoming', async (req, res) => {
  * WEBHOOK: Proactive Check-in Voice Call
  * Called when the check-in system needs to call the user about something urgent
  */
-app.post('/voice/checkin', async (req, res) => {
+app.post('/voice/checkin', webhookLimiter, async (req, res) => {
   const from = req.body.From;
   const callSid = req.body.CallSid;
   const reason = req.query.reason || 'important update';
@@ -153,7 +183,7 @@ Be direct but friendly. This is an urgent proactive check-in.`
  * WEBHOOK: Check-in Voice Response Handler
  * Processes speech input during check-in calls
  */
-app.post('/voice/checkin-response', async (req, res) => {
+app.post('/voice/checkin-response', webhookLimiter, async (req, res) => {
   const speechResult = req.body.SpeechResult;
   const callSid = req.body.CallSid;
 
@@ -226,7 +256,7 @@ Respond naturally in English (2-3 sentences max). Continue the conversation or w
  * WEBHOOK: Voice Response Handler
  * Processes speech input and continues conversation
  */
-app.post('/voice/response', async (req, res) => {
+app.post('/voice/response', webhookLimiter, async (req, res) => {
   const speechResult = req.body.SpeechResult;
   const callSid = req.body.CallSid;
 
@@ -309,7 +339,7 @@ Responde en español de manera breve y natural (máximo 2 frases). Haz una pregu
  * WEBHOOK: Call Status Updates
  * Twilio calls this when call status changes
  */
-app.post('/voice/status', async (req, res) => {
+app.post('/voice/status', webhookLimiter, async (req, res) => {
   const callSid = req.body.CallSid;
   const callStatus = req.body.CallStatus;
   const callDuration = req.body.CallDuration;
@@ -331,7 +361,7 @@ app.post('/voice/status', async (req, res) => {
  * WEBHOOK: Incoming SMS
  * Twilio calls this when someone texts your Twilio number
  */
-app.post('/sms/incoming', async (req, res) => {
+app.post('/sms/incoming', webhookLimiter, async (req, res) => {
   const from = req.body.From;
   const body = req.body.Body;
   const messageSid = req.body.MessageSid;
